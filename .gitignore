@@ -39,3 +39,6 @@ files/*.xlsx
 
 # Generated files
 /dashboard.html
+
+# Configuration (Sensitive)
+config.json

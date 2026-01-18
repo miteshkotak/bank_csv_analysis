@@ -1,0 +1,15 @@
+{
+    "directors": [
+        "DIRECTOR NAME 1",
+        "DIRECTOR NAME 2"
+    ],
+    "employees": [
+        "EMPLOYEE 1",
+        "EMPLOYEE 2"
+    ],
+    "party_mappings": {
+        "AMZN": "Amazon",
+        "UBER": "Uber",
+        "NFLX": "Netflix"
+    }
+}
