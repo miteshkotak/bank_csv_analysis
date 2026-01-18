@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body class="bg-slate-900 min-h-screen text-slate-100 p-6 md:p-10">
+
+    <header class="max-w-6xl mx-auto mb-10 flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                System Configuration
+            </h1>
+            <p class="text-slate-400 mt-1">Manage Categorization Rules</p>
+        </div>
+        <div class="space-x-4">
+            <a href="/dashboard"
+                class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors text-sm font-medium">Back
+                to Dashboard</a>
+            <a href="/logout"
+                class="px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors text-sm font-medium">Logout</a>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+        <!-- File Upload -->
+        <section class="glass rounded-2xl p-6 lg:col-span-2">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2 text-blue-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd"
+                        d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                        clip-rule="evenodd" />
+                </svg>
+                Data Source
+            </h2>
+            <form action="/admin" method="POST" enctype="multipart/form-data" class="flex items-center gap-4">
+                <input type="hidden" name="action" value="upload_file">
+                <div class="flex-1">
+                    <input type="file" name="statement_file" accept=".csv" class="block w-full text-sm text-slate-300
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-full file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-600 file:text-white
+                        file:hover:bg-blue-700
+                        cursor-pointer bg-slate-800/50 rounded-lg border border-slate-700
+                    " />
+                </div>
+                <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg text-sm font-medium transition-colors">
+                    Upload New CSV
+                </button>
+            </form>
+            <p class="text-xs text-slate-500 mt-2">Uploading will overwrite the dashboard data. Only CSV files
+                supported.</p>
+        </section>
+
+        <!-- Directors Management -->
+        <section class="glass rounded-2xl p-6">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2 text-purple-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                        clip-rule="evenodd" />
+                </svg>
+                Directors
+            </h2>
+            <div class="mb-6">
+                <form action="/admin" method="POST" class="flex gap-2">
+                    <input type="hidden" name="action" value="add_director">
+                    <input type="text" name="director_name" placeholder="Enter name keyword..."
+                        class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-purple-500 transition-colors"
+                        required>
+                    <button type="submit"
+                        class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add</button>
+                </form>
+            </div>
+            <ul class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                {% for d in config.directors %}
+                <li class="flex justify-between items-center bg-slate-800/30 px-3 py-2 rounded-lg group">
+                    <span class="text-sm text-slate-300">{{ d }}</span>
+                    <form action="/admin" method="POST" class="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <input type="hidden" name="action" value="remove_director">
+                        <input type="hidden" name="director_name" value="{{ d }}">
+                        <button type="submit" class="text-red-400 hover:text-red-300">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20"
+                                fill="currentColor">
+                                <path fill-rule="evenodd"
+                                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <!-- Employees Management -->
+        <section class="glass rounded-2xl p-6">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2 text-emerald-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                        clip-rule="evenodd" />
+                </svg>
+                Employees
+            </h2>
+            <div class="mb-6">
+                <form action="/admin" method="POST" class="flex gap-2">
+                    <input type="hidden" name="action" value="add_employee">
+                    <input type="text" name="employee_name" placeholder="Enter name keyword..."
+                        class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                        required>
+                    <button type="submit"
+                        class="bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add</button>
+                </form>
+            </div>
+            <ul class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+                {% for e in config.employees %}
+                <li class="flex justify-between items-center bg-slate-800/30 px-3 py-2 rounded-lg group">
+                    <span class="text-sm text-slate-300">{{ e }}</span>
+                    <form action="/admin" method="POST" class="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <input type="hidden" name="action" value="remove_employee">
+                        <input type="hidden" name="employee_name" value="{{ e }}">
+                        <button type="submit" class="text-red-400 hover:text-red-300">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20"
+                                fill="currentColor">
+                                <path fill-rule="evenodd"
+                                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <!-- Mappings Management -->
+        <section class="glass rounded-2xl p-6 lg:col-span-2">
+            <h2 class="text-xl font-semibold mb-4 flex items-center gap-2 text-blue-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd"
+                        d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v3.292a1 1 0 11-2 0V14.908A7.002 7.002 0 014.618 12.333 1 1 0 015.384 11.47z"
+                        clip-rule="evenodd" />
+                </svg>
+                Party Name Mappings
+            </h2>
+            <div class="mb-6">
+                <form action="/admin" method="POST" class="flex gap-2 flex-col md:flex-row">
+                    <input type="hidden" name="action" value="add_mapping">
+                    <input type="text" name="mapping_key" placeholder="Keyword (e.g. FLIXBUS)..."
+                        class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        required>
+                    <input type="text" name="mapping_val" placeholder="Clean Name (e.g. FlixBus)..."
+                        class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                        required>
+                    <button type="submit"
+                        class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg text-sm font-medium transition-colors">Add
+                        Rule</button>
+                </form>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto custom-scrollbar">
+                {% for key, val in config.party_mappings.items() %}
+                <div
+                    class="bg-slate-800/30 px-3 py-2 rounded-lg flex justify-between items-center group border border-slate-700/30">
+                    <div class="overflow-hidden">
+                        <p class="text-xs text-slate-500 uppercase tracking-widest font-bold">{{ key }}</p>
+                        <p class="text-sm text-slate-300 truncate">→ {{ val }}</p>
+                    </div>
+                    <form action="/admin" method="POST"
+                        class="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        <input type="hidden" name="action" value="remove_mapping">
+                        <input type="hidden" name="mapping_key" value="{{ key }}">
+                        <button type="submit" class="text-red-400 hover:text-red-300 p-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20"
+                                fill="currentColor">
+                                <path fill-rule="evenodd"
+                                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                                    clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+    </main>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(71, 85, 105, 0.8);
+            border-radius: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.6);
+        }
+    </style>
+
+</body>
+
+</html>
