@@ -40,6 +40,27 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.05);
         }
+
+        .nav-tab {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .nav-tab::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .nav-tab.active::after {
+            transform: scaleX(1);
+        }
     </style>
 </head>
 
@@ -62,28 +83,41 @@
     {% endwith %}
 
     <!-- Header -->
-    <header class="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-            Financial Overview
-        </h1>
-        <p class="text-slate-400 mt-1">Analysis for <span id="period-label" class="text-slate-200 font-medium"></span>
-        </p>
-        </div>
-        <div class="flex items-center gap-4">
-            <div class="text-sm text-slate-500" id="gen-date">
-                <!-- Date inserted by JS -->
+    <header class="mb-10">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div>
+                <h1
+                    class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                    Financial Overview
+                </h1>
+                <p class="text-slate-400 mt-1">Analysis for <span id="period-label"
+                        class="text-slate-200 font-medium"></span></p>
             </div>
-            <a href="/admin"
-                class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors shadow-lg shadow-blue-500/20">
+            <div class="flex items-center gap-4">
+                <div class="text-sm text-slate-500" id="gen-date">
+                    <!-- Date inserted by JS -->
+                </div>
+                {% if logged_in %}
+                <a href="/logout"
+                    class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors">
+                    Logout
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex gap-6 border-b border-slate-700/50 pb-2">
+            <a href="/" class="nav-tab active px-4 py-2 text-blue-400 font-medium">
+                Dashboard
+            </a>
+            <a href="/analyze" class="nav-tab px-4 py-2 text-slate-400 hover:text-slate-200 transition-colors">
+                Tax Analysis
+            </a>
+            <a href="/admin" class="nav-tab px-4 py-2 text-slate-400 hover:text-slate-200 transition-colors">
                 Admin
             </a>
-            {% if logged_in %}
-            <a href="/logout"
-                class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors">
-                Logout
-            </a>
-            {% endif %}
-        </div>
+        </nav>
     </header>
 
     <!-- KPI Cards -->

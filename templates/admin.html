@@ -17,25 +17,59 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
+
+        .nav-tab {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .nav-tab::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .nav-tab.active::after {
+            transform: scaleX(1);
+        }
     </style>
 </head>
 
 <body class="bg-slate-900 min-h-screen text-slate-100 p-6 md:p-10">
 
-    <header class="max-w-6xl mx-auto mb-10 flex justify-between items-center">
-        <div>
-            <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-                System Configuration
-            </h1>
-            <p class="text-slate-400 mt-1">Manage Categorization Rules</p>
+    <header class="max-w-6xl mx-auto mb-10">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1
+                    class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                    System Configuration
+                </h1>
+                <p class="text-slate-400 mt-1">Manage Categorization Rules</p>
+            </div>
+            <div class="space-x-4">
+                <a href="/logout"
+                    class="px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors text-sm font-medium">Logout</a>
+            </div>
         </div>
-        <div class="space-x-4">
-            <a href="/dashboard"
-                class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors text-sm font-medium">Back
-                to Dashboard</a>
-            <a href="/logout"
-                class="px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors text-sm font-medium">Logout</a>
-        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex gap-6 border-b border-slate-700/50 pb-2">
+            <a href="/" class="nav-tab px-4 py-2 text-slate-400 hover:text-slate-200 transition-colors">
+                Dashboard
+            </a>
+            <a href="/analyze" class="nav-tab px-4 py-2 text-slate-400 hover:text-slate-200 transition-colors">
+                Tax Analysis
+            </a>
+            <a href="/admin" class="nav-tab active px-4 py-2 text-blue-400 font-medium">
+                Admin
+            </a>
+        </nav>
     </header>
 
     <main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">

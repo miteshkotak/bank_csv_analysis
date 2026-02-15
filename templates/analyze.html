@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tax Return Analysis - Bank Statement</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#1e293b',
+                            900: '#0f172a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-tab {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .nav-tab::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .nav-tab.active::after {
+            transform: scaleX(1);
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .stat-card:hover::before {
+            opacity: 1;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-slide-in {
+            animation: slideIn 0.5s ease forwards;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-900 text-slate-100 min-h-screen p-6 md:p-10">
+
+    <!-- Header with Navigation -->
+    <header class="mb-10">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div>
+                <h1 class="text-3xl font-bold gradient-text">
+                    Tax Return Analysis
+                </h1>
+                <p class="text-slate-400 mt-1">Comprehensive tax calculation for <span id="period-label"
+                        class="text-slate-200 font-medium"></span></p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-sm text-slate-500" id="gen-date"></div>
+                {% if logged_in %}
+                <a href="/logout"
+                    class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors">
+                    Logout
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex gap-6 border-b border-slate-700/50 pb-2">
+            <a href="/" class="nav-tab px-4 py-2 text-slate-400 hover:text-slate-200 transition-colors">
+                Dashboard
+            </a>
+            <a href="/analyze" class="nav-tab active px-4 py-2 text-blue-400 font-medium">
+                Tax Analysis
+            </a>
+            <a href="/admin" class="nav-tab px-4 py-2 text-slate-400 hover:text-slate-200 transition-colors">
+                Admin
+            </a>
+        </nav>
+    </header>
+
+    <!-- Tax Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+        <!-- Total Income -->
+        <div class="glass-panel rounded-2xl p-6 stat-card">
+            <div class="relative z-10">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                    <p class="text-slate-400 text-sm font-medium">Total Income</p>
+                </div>
+                <h3 class="text-2xl font-bold text-emerald-400" id="total-income">₹0</h3>
+            </div>
+        </div>
+
+        <!-- Deductible Expenses -->
+        <div class="glass-panel rounded-2xl p-6 stat-card">
+            <div class="relative z-10">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                    <p class="text-slate-400 text-sm font-medium">Deductible Expenses</p>
+                </div>
+                <h3 class="text-2xl font-bold text-blue-400" id="deductible-expenses">₹0</h3>
+            </div>
+        </div>
+
+        <!-- Taxable Income -->
+        <div class="glass-panel rounded-2xl p-6 stat-card">
+            <div class="relative z-10">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-2 h-2 rounded-full bg-purple-500"></div>
+                    <p class="text-slate-400 text-sm font-medium">Taxable Income</p>
+                </div>
+                <h3 class="text-2xl font-bold text-purple-400" id="taxable-income">₹0</h3>
+            </div>
+        </div>
+
+        <!-- Estimated Tax -->
+        <div class="glass-panel rounded-2xl p-6 stat-card">
+            <div class="relative z-10">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-2 h-2 rounded-full bg-orange-500"></div>
+                    <p class="text-slate-400 text-sm font-medium">Estimated Tax</p>
+                </div>
+                <h3 class="text-2xl font-bold text-orange-400" id="estimated-tax">₹0</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Income Breakdown -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+        <!-- Income Details -->
+        <div class="glass-panel rounded-2xl p-6">
+            <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                <span class="w-2 h-6 bg-emerald-500 rounded-sm"></span>
+                Income Breakdown
+            </h3>
+            <div class="space-y-4">
+                <div
+                    class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <div>
+                        <p class="text-slate-300 font-medium">Salary & Director Remuneration</p>
+                        <p class="text-xs text-slate-500 mt-1">Employment income</p>
+                    </div>
+                    <span class="text-emerald-400 font-mono font-semibold" id="salary-income">₹0</span>
+                </div>
+                <div
+                    class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <div>
+                        <p class="text-slate-300 font-medium">FD Interest</p>
+                        <p class="text-xs text-slate-500 mt-1">Fixed deposit earnings</p>
+                    </div>
+                    <span class="text-emerald-400 font-mono font-semibold" id="fd-interest">₹0</span>
+                </div>
+                <div
+                    class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <div>
+                        <p class="text-slate-300 font-medium">Other Income</p>
+                        <p class="text-xs text-slate-500 mt-1">Miscellaneous receipts</p>
+                    </div>
+                    <span class="text-emerald-400 font-mono font-semibold" id="other-income">₹0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tax Calculation Chart -->
+        <div class="glass-panel rounded-2xl p-6">
+            <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                <span class="w-2 h-6 bg-purple-500 rounded-sm"></span>
+                Tax Calculation Flow
+            </h3>
+            <div class="h-64">
+                <canvas id="taxFlowChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expense Analysis -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+        <!-- Deductible Expenses -->
+        <div class="glass-panel rounded-2xl p-6">
+            <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                <span class="w-2 h-6 bg-blue-500 rounded-sm"></span>
+                Tax-Deductible Expenses
+            </h3>
+            <div class="space-y-4">
+                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    <div>
+                        <p class="text-slate-300 font-medium">Business Travel</p>
+                        <p class="text-xs text-slate-500 mt-1">Transportation & accommodation</p>
+                    </div>
+                    <span class="text-blue-400 font-mono font-semibold" id="business-travel">₹0</span>
+                </div>
+                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    <div>
+                        <p class="text-slate-300 font-medium">Professional Fees</p>
+                        <p class="text-xs text-slate-500 mt-1">Consultancy & services</p>
+                    </div>
+                    <span class="text-blue-400 font-mono font-semibold" id="professional-fees">₹0</span>
+                </div>
+                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    <div>
+                        <p class="text-slate-300 font-medium">Office Expenses</p>
+                        <p class="text-xs text-slate-500 mt-1">Supplies & utilities</p>
+                    </div>
+                    <span class="text-blue-400 font-mono font-semibold" id="office-expenses">₹0</span>
+                </div>
+                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                    <div>
+                        <p class="text-slate-300 font-medium">Recurring Services</p>
+                        <p class="text-xs text-slate-500 mt-1">Software & subscriptions</p>
+                    </div>
+                    <span class="text-blue-400 font-mono font-semibold" id="recurring-services">₹0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expense Distribution -->
+        <div class="glass-panel rounded-2xl p-6">
+            <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                <span class="w-2 h-6 bg-orange-500 rounded-sm"></span>
+                Expense Distribution
+            </h3>
+            <div class="h-80">
+                <canvas id="expenseDistChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tax Liability & Refund -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+        <!-- Tax Details -->
+        <div class="glass-panel rounded-2xl p-6 lg:col-span-2">
+            <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
+                <span class="w-2 h-6 bg-orange-500 rounded-sm"></span>
+                Tax Calculation Details
+            </h3>
+            <div class="space-y-3">
+                <div class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg">
+                    <span class="text-slate-300">Total Income</span>
+                    <span class="text-slate-100 font-mono" id="tax-detail-income">₹0</span>
+                </div>
+                <div
+                    class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg border-l-4 border-blue-500">
+                    <span class="text-slate-300">Less: Deductible Expenses</span>
+                    <span class="text-blue-400 font-mono" id="tax-detail-deductions">₹0</span>
+                </div>
+                <div class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg">
+                    <span class="text-slate-300">Taxable Income (Before Std. Deduction)</span>
+                    <span class="text-slate-100 font-mono" id="tax-detail-taxable-before">₹0</span>
+                </div>
+                <div
+                    class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg border-l-4 border-purple-500">
+                    <span class="text-slate-300">Less: Standard Deduction</span>
+                    <span class="text-purple-400 font-mono" id="tax-detail-std-deduction">₹50,000</span>
+                </div>
+                <div
+                    class="flex justify-between items-center p-4 bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-lg border border-purple-500/30">
+                    <span class="text-slate-100 font-semibold">Taxable Income (After Deductions)</span>
+                    <span class="text-purple-400 font-mono font-bold text-lg" id="tax-detail-taxable-after">₹0</span>
+                </div>
+                <div
+                    class="flex justify-between items-center p-4 bg-gradient-to-r from-orange-900/30 to-red-900/30 rounded-lg border border-orange-500/30">
+                    <span class="text-slate-100 font-semibold">Estimated Tax Liability (with cess)</span>
+                    <span class="text-orange-400 font-mono font-bold text-lg" id="tax-detail-liability">₹0</span>
+                </div>
+                <div class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg">
+                    <span class="text-slate-300">Tax Already Paid (CBDT)</span>
+                    <span class="text-slate-100 font-mono" id="tax-detail-paid">₹0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Refund/Liability Card -->
+        <div class="glass-panel rounded-2xl p-6 flex flex-col justify-center items-center text-center">
+            <div class="relative">
+                <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/20 to-blue-500/20 blur-2xl rounded-full"
+                    id="refund-glow"></div>
+                <div class="relative z-10">
+                    <p class="text-slate-400 text-sm mb-2">Expected</p>
+                    <h2 class="text-4xl font-bold mb-2" id="refund-label">Refund</h2>
+                    <p class="text-5xl font-black gradient-text mb-4" id="refund-amount">₹0</p>
+                    <p class="text-xs text-slate-500 max-w-xs">Based on new tax regime FY 2025-26. This is an estimate
+                        and should be verified with a tax professional.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category-wise Expense Table -->
+    <div class="glass-panel rounded-2xl overflow-hidden">
+        <div class="p-6 border-b border-slate-700/50">
+            <h3 class="font-semibold text-lg text-slate-200">All Expense Categories</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-400" id="category-expense-table">
+                <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                    <tr>
+                        <th class="px-6 py-3">Category</th>
+                        <th class="px-6 py-3 text-right">Amount</th>
+                        <th class="px-6 py-3 text-center">Tax Deductible</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700/50" id="category-tbody">
+                    <!-- Rows injected by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Data Injection & Chart Logic -->
+    <script>
+        const TAX_DATA = {{ tax_data | safe }};
+
+        const formatMoney = (amount) => {
+            return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set date
+            const dateEl = document.getElementById('gen-date');
+            if (dateEl) dateEl.textContent = "Generated: " + new Date().toLocaleDateString();
+
+            // Set period
+            const periodEl = document.getElementById('period-label');
+            if (periodEl && TAX_DATA.period) {
+                periodEl.textContent = TAX_DATA.period;
+            }
+
+            // Summary Cards
+            document.getElementById('total-income').textContent = formatMoney(TAX_DATA.income.total);
+            document.getElementById('deductible-expenses').textContent = formatMoney(TAX_DATA.expenses.deductible.total);
+            document.getElementById('taxable-income').textContent = formatMoney(TAX_DATA.tax.taxable_after_deduction);
+            document.getElementById('estimated-tax').textContent = formatMoney(TAX_DATA.tax.estimated_tax);
+
+            // Income Breakdown
+            document.getElementById('salary-income').textContent = formatMoney(TAX_DATA.income.salary);
+            document.getElementById('fd-interest').textContent = formatMoney(TAX_DATA.income.fd_interest);
+            document.getElementById('other-income').textContent = formatMoney(TAX_DATA.income.other);
+
+            // Deductible Expenses
+            document.getElementById('business-travel').textContent = formatMoney(TAX_DATA.expenses.deductible.business_travel);
+            document.getElementById('professional-fees').textContent = formatMoney(TAX_DATA.expenses.deductible.professional_fees);
+            document.getElementById('office-expenses').textContent = formatMoney(TAX_DATA.expenses.deductible.office_expenses);
+            document.getElementById('recurring-services').textContent = formatMoney(TAX_DATA.expenses.deductible.recurring_services);
+
+            // Tax Details
+            document.getElementById('tax-detail-income').textContent = formatMoney(TAX_DATA.income.total);
+            document.getElementById('tax-detail-deductions').textContent = formatMoney(TAX_DATA.expenses.deductible.total);
+            document.getElementById('tax-detail-taxable-before').textContent = formatMoney(TAX_DATA.tax.taxable_income);
+            document.getElementById('tax-detail-taxable-after').textContent = formatMoney(TAX_DATA.tax.taxable_after_deduction);
+            document.getElementById('tax-detail-liability').textContent = formatMoney(TAX_DATA.tax.estimated_tax);
+            document.getElementById('tax-detail-paid').textContent = formatMoney(TAX_DATA.tax.tax_paid);
+
+            // Refund/Liability
+            const refundAmount = TAX_DATA.tax.refund_liability;
+            const refundLabel = document.getElementById('refund-label');
+            const refundAmountEl = document.getElementById('refund-amount');
+            const refundGlow = document.getElementById('refund-glow');
+
+            if (refundAmount >= 0) {
+                refundLabel.textContent = 'Tax Refund';
+                refundLabel.classList.add('text-emerald-400');
+                refundAmountEl.textContent = formatMoney(Math.abs(refundAmount));
+                refundGlow.classList.remove('from-red-500/20', 'to-orange-500/20');
+                refundGlow.classList.add('from-emerald-500/20', 'to-blue-500/20');
+            } else {
+                refundLabel.textContent = 'Tax Liability';
+                refundLabel.classList.add('text-red-400');
+                refundAmountEl.textContent = formatMoney(Math.abs(refundAmount));
+                refundGlow.classList.remove('from-emerald-500/20', 'to-blue-500/20');
+                refundGlow.classList.add('from-red-500/20', 'to-orange-500/20');
+            }
+
+            // Tax Flow Chart (Waterfall)
+            const ctxFlow = document.getElementById('taxFlowChart').getContext('2d');
+            const income = TAX_DATA.income.total;
+            const deductions = TAX_DATA.expenses.deductible.total;
+            const stdDeduction = TAX_DATA.tax.standard_deduction;
+            const finalTaxable = TAX_DATA.tax.taxable_after_deduction;
+
+            new Chart(ctxFlow, {
+                type: 'bar',
+                data: {
+                    labels: ['Total Income', 'Business Deductions', 'Standard Deduction', 'Taxable Income'],
+                    datasets: [{
+                        label: 'Amount',
+                        data: [income, income - deductions, income - deductions - stdDeduction, finalTaxable],
+                        backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            grid: { color: '#334155' },
+                            ticks: {
+                                color: '#94a3b8',
+                                callback: function (value) {
+                                    return '₹' + (value / 1000).toFixed(0) + 'K';
+                                }
+                            }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', font: { size: 11 } }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            // Expense Distribution Pie
+            const deductibleCategories = [
+                { name: 'Business Travel', value: TAX_DATA.expenses.deductible.business_travel },
+                { name: 'Professional Fees', value: TAX_DATA.expenses.deductible.professional_fees },
+                { name: 'Office Expenses', value: TAX_DATA.expenses.deductible.office_expenses },
+                { name: 'Recurring Services', value: TAX_DATA.expenses.deductible.recurring_services },
+                { name: 'Non-Deductible', value: TAX_DATA.expenses.non_deductible.total }
+            ].filter(cat => cat.value > 0);
+
+            const ctxDist = document.getElementById('expenseDistChart').getContext('2d');
+            new Chart(ctxDist, {
+                type: 'doughnut',
+                data: {
+                    labels: deductibleCategories.map(c => c.name),
+                    datasets: [{
+                        data: deductibleCategories.map(c => c.value),
+                        backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'],
+                        borderColor: '#1e293b',
+                        borderWidth: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#94a3b8',
+                                padding: 15,
+                                font: { size: 12 }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Category-wise expense table
+            const deductibleCats = [
+                'Business Travel Expense', 'Professional Fees', 'Office Expense', 'Recurring Services'
+            ];
+
+            const tbody = document.getElementById('category-tbody');
+            tbody.innerHTML = TAX_DATA.category_wise_expenses.map(row => {
+                const isDeductible = deductibleCats.includes(row.Category);
+                return `
+                    <tr class="hover:bg-slate-800/30 transition-colors">
+                        <td class="px-6 py-4 font-medium text-slate-200">${row.Category}</td>
+                        <td class="px-6 py-4 text-right font-mono text-slate-300">${formatMoney(row.Amount)}</td>
+                        <td class="px-6 py-4 text-center">
+                            ${isDeductible
+                        ? '<span class="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs font-medium">Yes</span>'
+                        : '<span class="px-3 py-1 rounded-full bg-slate-700/50 text-slate-400 text-xs font-medium">No</span>'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Animate cards
+            const cards = document.querySelectorAll('.stat-card');
+            cards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.classList.add('animate-slide-in');
+                }, index * 100);
+            });
+        });
+    </script>
+</body>
+
+</html>
