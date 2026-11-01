@@ -30,7 +30,7 @@
         }
     </script>
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -118,10 +118,16 @@
                 <h1 class="text-3xl font-bold gradient-text">
                     Tax Return Analysis
                 </h1>
-                <p class="text-slate-400 mt-1">Comprehensive tax calculation for <span id="period-label"
-                        class="text-slate-200 font-medium"></span></p>
+                <p class="text-slate-400 mt-1">Corporate tax estimate for <span id="period-label"
+                        class="text-slate-200 font-medium"></span> <span class="text-slate-500" id="regime-label"></span>
+                </p>
             </div>
             <div class="flex items-center gap-4">
+                <label class="text-sm text-slate-400 flex items-center gap-2">
+                    Year
+                    <select id="fy-select"
+                        class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"></select>
+                </label>
                 <div class="text-sm text-slate-500" id="gen-date"></div>
                 {% if logged_in %}
                 <a href="/logout"
@@ -146,9 +152,16 @@
         </nav>
     </header>
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="mb-6 px-4 py-3 rounded-lg text-sm {{ 'bg-red-500/10 text-red-300 border border-red-500/30' if category == 'error' else 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' }}">
+        {{ message }}
+    </div>
+    {% endfor %}
+    {% endwith %}
+
     <!-- Tax Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-        <!-- Total Income -->
         <div class="glass-panel rounded-2xl p-6 stat-card">
             <div class="relative z-10">
                 <div class="flex items-center gap-2 mb-2">
@@ -158,8 +171,6 @@
                 <h3 class="text-2xl font-bold text-emerald-400" id="total-income">₹0</h3>
             </div>
         </div>
-
-        <!-- Deductible Expenses -->
         <div class="glass-panel rounded-2xl p-6 stat-card">
             <div class="relative z-10">
                 <div class="flex items-center gap-2 mb-2">
@@ -169,8 +180,6 @@
                 <h3 class="text-2xl font-bold text-blue-400" id="deductible-expenses">₹0</h3>
             </div>
         </div>
-
-        <!-- Taxable Income -->
         <div class="glass-panel rounded-2xl p-6 stat-card">
             <div class="relative z-10">
                 <div class="flex items-center gap-2 mb-2">
@@ -180,112 +189,179 @@
                 <h3 class="text-2xl font-bold text-purple-400" id="taxable-income">₹0</h3>
             </div>
         </div>
-
-        <!-- Estimated Tax -->
         <div class="glass-panel rounded-2xl p-6 stat-card">
             <div class="relative z-10">
                 <div class="flex items-center gap-2 mb-2">
                     <div class="w-2 h-2 rounded-full bg-orange-500"></div>
-                    <p class="text-slate-400 text-sm font-medium">Estimated Tax</p>
+                    <p class="text-slate-400 text-sm font-medium">Tax (incl. surcharge & cess)</p>
                 </div>
                 <h3 class="text-2xl font-bold text-orange-400" id="estimated-tax">₹0</h3>
             </div>
         </div>
     </div>
 
-    <!-- Income Breakdown -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
-        <!-- Income Details -->
+    <!-- Reconciliation with actual figures -->
+    <div class="glass-panel rounded-2xl p-6 mb-10 hidden" id="recon-panel">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+            <h3 class="text-lg font-semibold flex items-center gap-2">
+                <span class="w-2 h-6 bg-sky-500 rounded-sm"></span>
+                Reconciliation with Actual Return
+            </h3>
+            <span id="recon-status" class="px-3 py-1 rounded-full text-xs font-medium"></span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-400">
+                <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                    <tr>
+                        <th class="px-4 py-3">Item</th>
+                        <th class="px-4 py-3 text-right">This app</th>
+                        <th class="px-4 py-3 text-right">Actual (ITR / challans)</th>
+                        <th class="px-4 py-3 text-right">Gap</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700/50" id="recon-tbody"></tbody>
+            </table>
+        </div>
+        <p class="text-xs text-slate-500 mt-3">Actual figures are entered under <a href="/admin#actuals"
+                class="text-blue-400 hover:underline">Admin → Actual tax figures</a>.</p>
+    </div>
+
+    <!-- Income + Computation -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
         <div class="glass-panel rounded-2xl p-6">
             <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
                 <span class="w-2 h-6 bg-emerald-500 rounded-sm"></span>
                 Income Breakdown
             </h3>
             <div class="space-y-4">
-                <div
-                    class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors">
+                <div class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg">
                     <div>
-                        <p class="text-slate-300 font-medium">Salary & Director Remuneration</p>
-                        <p class="text-xs text-slate-500 mt-1">Employment income</p>
+                        <p class="text-slate-300 font-medium">Business Income</p>
+                        <p class="text-xs text-slate-500 mt-1">All credits except excluded items below</p>
                     </div>
-                    <span class="text-emerald-400 font-mono font-semibold" id="salary-income">₹0</span>
+                    <span class="text-emerald-400 font-mono font-semibold" id="business-income">₹0</span>
                 </div>
-                <div
-                    class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors">
+                <div class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg">
                     <div>
                         <p class="text-slate-300 font-medium">FD Interest</p>
-                        <p class="text-xs text-slate-500 mt-1">Fixed deposit earnings</p>
+                        <p class="text-xs text-slate-500 mt-1">Income from other sources</p>
                     </div>
                     <span class="text-emerald-400 font-mono font-semibold" id="fd-interest">₹0</span>
                 </div>
-                <div
-                    class="flex justify-between items-center p-4 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-colors">
-                    <div>
-                        <p class="text-slate-300 font-medium">Other Income</p>
-                        <p class="text-xs text-slate-500 mt-1">Miscellaneous receipts</p>
-                    </div>
-                    <span class="text-emerald-400 font-mono font-semibold" id="other-income">₹0</span>
-                </div>
             </div>
+            <div class="flex justify-between items-center mt-6 mb-2">
+                <p class="text-sm font-medium text-slate-300">Credits not counted as income</p>
+                <a href="/admin#tax-rules" class="text-xs text-blue-400 hover:underline">Edit rules</a>
+            </div>
+            <ul class="space-y-1 text-sm" id="income-excluded"></ul>
         </div>
 
-        <!-- Tax Calculation Chart -->
-        <div class="glass-panel rounded-2xl p-6">
+        <div class="glass-panel rounded-2xl p-6 lg:col-span-2">
             <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
-                <span class="w-2 h-6 bg-purple-500 rounded-sm"></span>
-                Tax Calculation Flow
+                <span class="w-2 h-6 bg-orange-500 rounded-sm"></span>
+                Tax Computation
             </h3>
-            <div class="h-64">
-                <canvas id="taxFlowChart"></canvas>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="md:col-span-2 space-y-2 text-sm" id="computation-rows"></div>
+                <div class="flex flex-col justify-center items-center text-center">
+                    <div class="relative">
+                        <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/20 to-blue-500/20 blur-2xl rounded-full"
+                            id="refund-glow"></div>
+                        <div class="relative z-10">
+                            <p class="text-slate-400 text-sm mb-2" id="refund-caption">Expected</p>
+                            <h2 class="text-3xl font-bold mb-2" id="refund-label">Refund</h2>
+                            <p class="text-4xl font-black gradient-text mb-4" id="refund-amount">₹0</p>
+                            <p class="text-xs text-slate-500 max-w-xs">Estimate from the bank statement using the rules in
+                                Admin. Verify with your CA before filing.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Expense Analysis -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
-        <!-- Deductible Expenses -->
-        <div class="glass-panel rounded-2xl p-6">
-            <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
-                <span class="w-2 h-6 bg-blue-500 rounded-sm"></span>
-                Tax-Deductible Expenses
+    <!-- FD Interest Summary -->
+    <div class="glass-panel rounded-2xl p-6 mb-10">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2">
+                <span class="w-2 h-6 bg-teal-500 rounded-sm"></span>
+                FD Interest Summary
             </h3>
-            <div class="space-y-4">
-                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <div>
-                        <p class="text-slate-300 font-medium">Business Travel</p>
-                        <p class="text-xs text-slate-500 mt-1">Transportation & accommodation</p>
-                    </div>
-                    <span class="text-blue-400 font-mono font-semibold" id="business-travel">₹0</span>
-                </div>
-                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <div>
-                        <p class="text-slate-300 font-medium">Professional Fees</p>
-                        <p class="text-xs text-slate-500 mt-1">Consultancy & services</p>
-                    </div>
-                    <span class="text-blue-400 font-mono font-semibold" id="professional-fees">₹0</span>
-                </div>
-                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <div>
-                        <p class="text-slate-300 font-medium">Office Expenses</p>
-                        <p class="text-xs text-slate-500 mt-1">Supplies & utilities</p>
-                    </div>
-                    <span class="text-blue-400 font-mono font-semibold" id="office-expenses">₹0</span>
-                </div>
-                <div class="flex justify-between items-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                    <div>
-                        <p class="text-slate-300 font-medium">Recurring Services</p>
-                        <p class="text-xs text-slate-500 mt-1">Software & subscriptions</p>
-                    </div>
-                    <span class="text-blue-400 font-mono font-semibold" id="recurring-services">₹0</span>
-                </div>
+            <div class="flex items-center gap-4">
+                <p class="text-xs text-slate-500" id="fd-subtitle"></p>
+                <a href="/analyze/fd-report.xlsx" id="fd-report-link"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
+                    </svg>
+                    Download Report (Excel)
+                </a>
             </div>
         </div>
 
-        <!-- Expense Distribution -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Gross Interest</p>
+                <p class="text-xl font-bold text-emerald-400 font-mono" id="fd-gross">₹0</p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">TDS Deducted</p>
+                <p class="text-xl font-bold text-red-400 font-mono" id="fd-tds">₹0</p>
+                <p class="text-xs text-slate-500 mt-1" id="fd-tds-rate"></p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Net Interest Received</p>
+                <p class="text-xl font-bold text-teal-400 font-mono" id="fd-net">₹0</p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Principal Invested</p>
+                <p class="text-xl font-bold text-slate-200 font-mono" id="fd-principal">₹0</p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Principal Returned</p>
+                <p class="text-xl font-bold text-slate-200 font-mono" id="fd-returned">₹0</p>
+                <p class="text-xs text-slate-500 mt-1">Sweep-in & redemptions</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <div class="lg:col-span-3 overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-400">
+                    <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                        <tr>
+                            <th class="px-4 py-3">FD Number</th>
+                            <th class="px-4 py-3">Booked On</th>
+                            <th class="px-4 py-3 text-right">Principal</th>
+                            <th class="px-4 py-3 text-right">Interest</th>
+                            <th class="px-4 py-3 text-right">TDS</th>
+                            <th class="px-4 py-3 text-right">Net</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700/50" id="fd-tbody"></tbody>
+                </table>
+            </div>
+            <div class="lg:col-span-2 h-72">
+                <canvas id="fdMonthlyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expenses -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+        <div class="glass-panel rounded-2xl p-6">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-semibold flex items-center gap-2">
+                    <span class="w-2 h-6 bg-red-500 rounded-sm"></span>
+                    Debits Not Deductible
+                </h3>
+                <a href="/admin#tax-rules" class="text-xs text-blue-400 hover:underline">Edit rules</a>
+            </div>
+            <ul class="space-y-2 text-sm" id="expense-excluded"></ul>
+        </div>
         <div class="glass-panel rounded-2xl p-6">
             <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
-                <span class="w-2 h-6 bg-orange-500 rounded-sm"></span>
-                Expense Distribution
+                <span class="w-2 h-6 bg-blue-500 rounded-sm"></span>
+                Deductible Expenses by Category
             </h3>
             <div class="h-80">
                 <canvas id="expenseDistChart"></canvas>
@@ -293,260 +369,99 @@
         </div>
     </div>
 
-    <!-- Tax Liability & Refund -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
-        <!-- Tax Details -->
-        <div class="glass-panel rounded-2xl p-6 lg:col-span-2">
-            <h3 class="text-lg font-semibold mb-6 flex items-center gap-2">
-                <span class="w-2 h-6 bg-orange-500 rounded-sm"></span>
-                Tax Calculation Details
+    <!-- Advance tax planner + challans -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
+        <div class="glass-panel rounded-2xl p-6">
+            <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">
+                <span class="w-2 h-6 bg-yellow-500 rounded-sm"></span>
+                Advance Tax Schedule
             </h3>
-            <div class="space-y-3">
-                <div class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg">
-                    <span class="text-slate-300">Total Income</span>
-                    <span class="text-slate-100 font-mono" id="tax-detail-income">₹0</span>
-                </div>
-                <div
-                    class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg border-l-4 border-blue-500">
-                    <span class="text-slate-300">Less: Deductible Expenses</span>
-                    <span class="text-blue-400 font-mono" id="tax-detail-deductions">₹0</span>
-                </div>
-                <div class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg">
-                    <span class="text-slate-300">Taxable Income (Before Std. Deduction)</span>
-                    <span class="text-slate-100 font-mono" id="tax-detail-taxable-before">₹0</span>
-                </div>
-                <div
-                    class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg border-l-4 border-purple-500">
-                    <span class="text-slate-300">Less: Standard Deduction</span>
-                    <span class="text-purple-400 font-mono" id="tax-detail-std-deduction">₹50,000</span>
-                </div>
-                <div
-                    class="flex justify-between items-center p-4 bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-lg border border-purple-500/30">
-                    <span class="text-slate-100 font-semibold">Taxable Income (After Deductions)</span>
-                    <span class="text-purple-400 font-mono font-bold text-lg" id="tax-detail-taxable-after">₹0</span>
-                </div>
-                <div
-                    class="flex justify-between items-center p-4 bg-gradient-to-r from-orange-900/30 to-red-900/30 rounded-lg border border-orange-500/30">
-                    <span class="text-slate-100 font-semibold">Estimated Tax Liability (with cess)</span>
-                    <span class="text-orange-400 font-mono font-bold text-lg" id="tax-detail-liability">₹0</span>
-                </div>
-                <div class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg">
-                    <span class="text-slate-300">Tax Already Paid (CBDT)</span>
-                    <span class="text-slate-100 font-mono" id="tax-detail-paid">₹0</span>
-                </div>
+            <p class="text-xs text-slate-500 mb-4">Paying each instalment on time avoids interest under section 234C.
+                Based on transactions in this statement.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-400">
+                    <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                        <tr>
+                            <th class="px-4 py-3">Due date</th>
+                            <th class="px-4 py-3 text-right">Cumulative due</th>
+                            <th class="px-4 py-3 text-right">Paid by then</th>
+                            <th class="px-4 py-3 text-right">Shortfall</th>
+                            <th class="px-4 py-3 text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700/50" id="planner-tbody"></tbody>
+                </table>
             </div>
         </div>
-
-        <!-- Refund/Liability Card -->
-        <div class="glass-panel rounded-2xl p-6 flex flex-col justify-center items-center text-center">
-            <div class="relative">
-                <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/20 to-blue-500/20 blur-2xl rounded-full"
-                    id="refund-glow"></div>
-                <div class="relative z-10">
-                    <p class="text-slate-400 text-sm mb-2">Expected</p>
-                    <h2 class="text-4xl font-bold mb-2" id="refund-label">Refund</h2>
-                    <p class="text-5xl font-black gradient-text mb-4" id="refund-amount">₹0</p>
-                    <p class="text-xs text-slate-500 max-w-xs">Based on new tax regime FY 2025-26. This is an estimate
-                        and should be verified with a tax professional.</p>
-                </div>
+        <div class="glass-panel rounded-2xl p-6">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-lg font-semibold flex items-center gap-2">
+                    <span class="w-2 h-6 bg-indigo-500 rounded-sm"></span>
+                    Tax Payments in Statement
+                </h3>
+                <a href="/admin#challans" class="text-xs text-blue-400 hover:underline">Reassign</a>
+            </div>
+            <p class="text-xs text-slate-500 mb-4">Only advance tax for this year's assessment year is credited
+                against this year's tax.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-400">
+                    <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                        <tr>
+                            <th class="px-4 py-3">Date</th>
+                            <th class="px-4 py-3 text-right">Amount</th>
+                            <th class="px-4 py-3">Counted as</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700/50" id="challan-tbody"></tbody>
+                </table>
             </div>
         </div>
     </div>
 
     <!-- Category-wise Expense Table -->
-    <div class="glass-panel rounded-2xl overflow-hidden">
+    <div class="glass-panel rounded-2xl overflow-hidden mb-10">
         <div class="p-6 border-b border-slate-700/50">
             <h3 class="font-semibold text-lg text-slate-200">All Expense Categories</h3>
         </div>
         <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm text-slate-400" id="category-expense-table">
+            <table class="w-full text-left text-sm text-slate-400">
                 <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
                     <tr>
                         <th class="px-6 py-3">Category</th>
                         <th class="px-6 py-3 text-right">Amount</th>
+                        <th class="px-6 py-3 text-right">Deductible</th>
                         <th class="px-6 py-3 text-center">Tax Deductible</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-700/50" id="category-tbody">
-                    <!-- Rows injected by JS -->
-                </tbody>
+                <tbody class="divide-y divide-slate-700/50" id="category-tbody"></tbody>
             </table>
         </div>
     </div>
 
-    <!-- Data Injection & Chart Logic -->
-    <script>
-        const TAX_DATA = {{ tax_data | safe }};
-
-        const formatMoney = (amount) => {
-            return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
-        };
-
-        document.addEventListener('DOMContentLoaded', () => {
-            // Set date
-            const dateEl = document.getElementById('gen-date');
-            if (dateEl) dateEl.textContent = "Generated: " + new Date().toLocaleDateString();
-
-            // Set period
-            const periodEl = document.getElementById('period-label');
-            if (periodEl && TAX_DATA.period) {
-                periodEl.textContent = TAX_DATA.period;
-            }
-
-            // Summary Cards
-            document.getElementById('total-income').textContent = formatMoney(TAX_DATA.income.total);
-            document.getElementById('deductible-expenses').textContent = formatMoney(TAX_DATA.expenses.deductible.total);
-            document.getElementById('taxable-income').textContent = formatMoney(TAX_DATA.tax.taxable_after_deduction);
-            document.getElementById('estimated-tax').textContent = formatMoney(TAX_DATA.tax.estimated_tax);
-
-            // Income Breakdown
-            document.getElementById('salary-income').textContent = formatMoney(TAX_DATA.income.salary);
-            document.getElementById('fd-interest').textContent = formatMoney(TAX_DATA.income.fd_interest);
-            document.getElementById('other-income').textContent = formatMoney(TAX_DATA.income.other);
-
-            // Deductible Expenses
-            document.getElementById('business-travel').textContent = formatMoney(TAX_DATA.expenses.deductible.business_travel);
-            document.getElementById('professional-fees').textContent = formatMoney(TAX_DATA.expenses.deductible.professional_fees);
-            document.getElementById('office-expenses').textContent = formatMoney(TAX_DATA.expenses.deductible.office_expenses);
-            document.getElementById('recurring-services').textContent = formatMoney(TAX_DATA.expenses.deductible.recurring_services);
-
-            // Tax Details
-            document.getElementById('tax-detail-income').textContent = formatMoney(TAX_DATA.income.total);
-            document.getElementById('tax-detail-deductions').textContent = formatMoney(TAX_DATA.expenses.deductible.total);
-            document.getElementById('tax-detail-taxable-before').textContent = formatMoney(TAX_DATA.tax.taxable_income);
-            document.getElementById('tax-detail-taxable-after').textContent = formatMoney(TAX_DATA.tax.taxable_after_deduction);
-            document.getElementById('tax-detail-liability').textContent = formatMoney(TAX_DATA.tax.estimated_tax);
-            document.getElementById('tax-detail-paid').textContent = formatMoney(TAX_DATA.tax.tax_paid);
-
-            // Refund/Liability
-            const refundAmount = TAX_DATA.tax.refund_liability;
-            const refundLabel = document.getElementById('refund-label');
-            const refundAmountEl = document.getElementById('refund-amount');
-            const refundGlow = document.getElementById('refund-glow');
-
-            if (refundAmount >= 0) {
-                refundLabel.textContent = 'Tax Refund';
-                refundLabel.classList.add('text-emerald-400');
-                refundAmountEl.textContent = formatMoney(Math.abs(refundAmount));
-                refundGlow.classList.remove('from-red-500/20', 'to-orange-500/20');
-                refundGlow.classList.add('from-emerald-500/20', 'to-blue-500/20');
-            } else {
-                refundLabel.textContent = 'Tax Liability';
-                refundLabel.classList.add('text-red-400');
-                refundAmountEl.textContent = formatMoney(Math.abs(refundAmount));
-                refundGlow.classList.remove('from-emerald-500/20', 'to-blue-500/20');
-                refundGlow.classList.add('from-red-500/20', 'to-orange-500/20');
-            }
-
-            // Tax Flow Chart (Waterfall)
-            const ctxFlow = document.getElementById('taxFlowChart').getContext('2d');
-            const income = TAX_DATA.income.total;
-            const deductions = TAX_DATA.expenses.deductible.total;
-            const stdDeduction = TAX_DATA.tax.standard_deduction;
-            const finalTaxable = TAX_DATA.tax.taxable_after_deduction;
-
-            new Chart(ctxFlow, {
-                type: 'bar',
-                data: {
-                    labels: ['Total Income', 'Business Deductions', 'Standard Deduction', 'Taxable Income'],
-                    datasets: [{
-                        label: 'Amount',
-                        data: [income, income - deductions, income - deductions - stdDeduction, finalTaxable],
-                        backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'],
-                        borderRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            grid: { color: '#334155' },
-                            ticks: {
-                                color: '#94a3b8',
-                                callback: function (value) {
-                                    return '₹' + (value / 1000).toFixed(0) + 'K';
-                                }
-                            }
-                        },
-                        x: {
-                            grid: { display: false },
-                            ticks: { color: '#94a3b8', font: { size: 11 } }
-                        }
-                    },
-                    plugins: {
-                        legend: { display: false }
-                    }
-                }
-            });
-
-            // Expense Distribution Pie
-            const deductibleCategories = [
-                { name: 'Business Travel', value: TAX_DATA.expenses.deductible.business_travel },
-                { name: 'Professional Fees', value: TAX_DATA.expenses.deductible.professional_fees },
-                { name: 'Office Expenses', value: TAX_DATA.expenses.deductible.office_expenses },
-                { name: 'Recurring Services', value: TAX_DATA.expenses.deductible.recurring_services },
-                { name: 'Non-Deductible', value: TAX_DATA.expenses.non_deductible.total }
-            ].filter(cat => cat.value > 0);
-
-            const ctxDist = document.getElementById('expenseDistChart').getContext('2d');
-            new Chart(ctxDist, {
-                type: 'doughnut',
-                data: {
-                    labels: deductibleCategories.map(c => c.name),
-                    datasets: [{
-                        data: deductibleCategories.map(c => c.value),
-                        backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'],
-                        borderColor: '#1e293b',
-                        borderWidth: 3
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                color: '#94a3b8',
-                                padding: 15,
-                                font: { size: 12 }
-                            }
-                        }
-                    }
-                }
-            });
-
-            // Category-wise expense table
-            const deductibleCats = [
-                'Business Travel Expense', 'Professional Fees', 'Office Expense', 'Recurring Services'
-            ];
-
-            const tbody = document.getElementById('category-tbody');
-            tbody.innerHTML = TAX_DATA.category_wise_expenses.map(row => {
-                const isDeductible = deductibleCats.includes(row.Category);
-                return `
-                    <tr class="hover:bg-slate-800/30 transition-colors">
-                        <td class="px-6 py-4 font-medium text-slate-200">${row.Category}</td>
-                        <td class="px-6 py-4 text-right font-mono text-slate-300">${formatMoney(row.Amount)}</td>
-                        <td class="px-6 py-4 text-center">
-                            ${isDeductible
-                        ? '<span class="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs font-medium">Yes</span>'
-                        : '<span class="px-3 py-1 rounded-full bg-slate-700/50 text-slate-400 text-xs font-medium">No</span>'}
-                        </td>
+    <!-- Excluded transactions (audit trail) -->
+    <details class="glass-panel rounded-2xl overflow-hidden">
+        <summary class="p-6 cursor-pointer font-semibold text-slate-200">
+            Excluded transactions <span class="text-slate-500 font-normal text-sm" id="excluded-count"></span>
+        </summary>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-400">
+                <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                    <tr>
+                        <th class="px-6 py-3">Date</th>
+                        <th class="px-6 py-3">Narration</th>
+                        <th class="px-6 py-3">Reason</th>
+                        <th class="px-6 py-3 text-right">Amount</th>
                     </tr>
-                `;
-            }).join('');
+                </thead>
+                <tbody class="divide-y divide-slate-700/50" id="excluded-tbody"></tbody>
+            </table>
+        </div>
+    </details>
 
-            // Animate cards
-            const cards = document.querySelectorAll('.stat-card');
-            cards.forEach((card, index) => {
-                setTimeout(() => {
-                    card.classList.add('animate-slide-in');
-                }, index * 100);
-            });
-        });
+    <script>
+        window.TAX_DATA = {{ tax_data | safe }};
     </script>
+    <script src="{{ url_for('static', filename='js/analyze.js') }}"></script>
 </body>
 
 </html>

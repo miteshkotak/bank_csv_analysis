@@ -42,3 +42,9 @@ files/*.xlsx
 
 # Configuration (Sensitive)
 config.json
+
+# Per-year bank statements (private financial data)
+files/statements/
+
+# Test coverage data
+.coverage
