@@ -241,6 +241,72 @@
         </div>
     </div>
 
+    <!-- FD Interest Summary -->
+    <div class="glass-panel rounded-2xl p-6 mb-10">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2">
+                <span class="w-2 h-6 bg-teal-500 rounded-sm"></span>
+                FD Interest Summary
+            </h3>
+            <div class="flex items-center gap-4">
+                <p class="text-xs text-slate-500" id="fd-subtitle"></p>
+                <a href="/analyze/fd-report.xlsx"
+                    class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
+                    </svg>
+                    Download Report (Excel)
+                </a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Gross Interest</p>
+                <p class="text-xl font-bold text-emerald-400 font-mono" id="fd-gross">₹0</p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">TDS Deducted</p>
+                <p class="text-xl font-bold text-red-400 font-mono" id="fd-tds">₹0</p>
+                <p class="text-xs text-slate-500 mt-1" id="fd-tds-rate"></p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Net Interest Received</p>
+                <p class="text-xl font-bold text-teal-400 font-mono" id="fd-net">₹0</p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Principal Invested</p>
+                <p class="text-xl font-bold text-slate-200 font-mono" id="fd-principal">₹0</p>
+            </div>
+            <div class="p-4 bg-slate-800/30 rounded-lg">
+                <p class="text-xs text-slate-500 mb-1">Principal Returned</p>
+                <p class="text-xl font-bold text-slate-200 font-mono" id="fd-returned">₹0</p>
+                <p class="text-xs text-slate-500 mt-1">Sweep-in & redemptions</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            <div class="lg:col-span-3 overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-400">
+                    <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                        <tr>
+                            <th class="px-4 py-3">FD Number</th>
+                            <th class="px-4 py-3">Booked On</th>
+                            <th class="px-4 py-3 text-right">Principal</th>
+                            <th class="px-4 py-3 text-right">Interest</th>
+                            <th class="px-4 py-3 text-right">TDS</th>
+                            <th class="px-4 py-3 text-right">Net</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700/50" id="fd-tbody"></tbody>
+                </table>
+            </div>
+            <div class="lg:col-span-2 h-72">
+                <canvas id="fdMonthlyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
     <!-- Expense Analysis -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10">
         <!-- Deductible Expenses -->
@@ -331,8 +397,16 @@
                     <span class="text-orange-400 font-mono font-bold text-lg" id="tax-detail-liability">₹0</span>
                 </div>
                 <div class="flex justify-between items-center p-3 bg-slate-800/20 rounded-lg">
-                    <span class="text-slate-300">Tax Already Paid (CBDT)</span>
+                    <span class="text-slate-300">Tax Already Paid (CBDT + TDS on FD)</span>
                     <span class="text-slate-100 font-mono" id="tax-detail-paid">₹0</span>
+                </div>
+                <div class="flex justify-between items-center px-3 py-1 text-sm">
+                    <span class="text-slate-500 pl-4">• CBDT payments</span>
+                    <span class="text-slate-400 font-mono" id="tax-detail-cbdt">₹0</span>
+                </div>
+                <div class="flex justify-between items-center px-3 py-1 text-sm">
+                    <span class="text-slate-500 pl-4">• TDS deducted on FD interest</span>
+                    <span class="text-slate-400 font-mono" id="tax-detail-tds">₹0</span>
                 </div>
             </div>
         </div>
@@ -417,6 +491,56 @@
             document.getElementById('tax-detail-taxable-after').textContent = formatMoney(TAX_DATA.tax.taxable_after_deduction);
             document.getElementById('tax-detail-liability').textContent = formatMoney(TAX_DATA.tax.estimated_tax);
             document.getElementById('tax-detail-paid').textContent = formatMoney(TAX_DATA.tax.tax_paid);
+            document.getElementById('tax-detail-cbdt').textContent = formatMoney(TAX_DATA.tax.cbdt_paid);
+            document.getElementById('tax-detail-tds').textContent = formatMoney(TAX_DATA.tax.tds_on_fd);
+
+            // FD Interest Summary
+            const FD = TAX_DATA.fd_summary;
+            const fdT = FD.totals;
+            document.getElementById('fd-subtitle').textContent = `${fdT.deposit_count} fixed deposit(s) found in statement`;
+            document.getElementById('fd-gross').textContent = formatMoney(fdT.gross_interest);
+            document.getElementById('fd-tds').textContent = formatMoney(fdT.tds);
+            document.getElementById('fd-tds-rate').textContent = `Effective rate ${fdT.effective_tds_rate.toFixed(1)}%`;
+            document.getElementById('fd-net').textContent = formatMoney(fdT.net_interest);
+            document.getElementById('fd-principal').textContent = formatMoney(fdT.principal_booked);
+            document.getElementById('fd-returned').textContent = formatMoney(fdT.principal_returned);
+
+            const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+            const fdTbody = document.getElementById('fd-tbody');
+            fdTbody.innerHTML = FD.deposits.length
+                ? FD.deposits.map(d => `
+                    <tr class="hover:bg-slate-800/30 transition-colors">
+                        <td class="px-4 py-3 font-mono text-slate-200">${d.fd_number}</td>
+                        <td class="px-4 py-3">${fmtDate(d.booked_on)}</td>
+                        <td class="px-4 py-3 text-right font-mono">${d.principal ? formatMoney(d.principal) : '—'}</td>
+                        <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatMoney(d.interest)}</td>
+                        <td class="px-4 py-3 text-right font-mono text-red-400">${formatMoney(d.tds)}</td>
+                        <td class="px-4 py-3 text-right font-mono text-teal-400">${formatMoney(d.net_interest)}</td>
+                    </tr>`).join('')
+                : '<tr><td colspan="6" class="px-4 py-6 text-center text-slate-500">No FD transactions found</td></tr>';
+
+            new Chart(document.getElementById('fdMonthlyChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: FD.monthly.map(m => new Date(m.month + '-01').toLocaleDateString('en-IN', { month: 'short', year: '2-digit' })),
+                    datasets: [
+                        { label: 'Interest', data: FD.monthly.map(m => m.interest), backgroundColor: '#14b8a6', borderRadius: 4 },
+                        { label: 'TDS', data: FD.monthly.map(m => m.tds), backgroundColor: '#ef4444', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8', callback: v => '₹' + (v / 1000).toFixed(0) + 'K' } },
+                        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+                    },
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#94a3b8' } },
+                        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${formatMoney(c.raw)}` } }
+                    }
+                }
+            });
 
             // Refund/Liability
             const refundAmount = TAX_DATA.tax.refund_liability;

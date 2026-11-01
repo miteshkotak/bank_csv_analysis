@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file
+import io
 import json
 import os
 import pathlib
@@ -7,6 +8,9 @@ import re
 import csv
 import sys
 from datetime import datetime
+
+from fd_analysis import FD_BOOKING, FD_INTEREST, FD_PRINCIPAL_RETURN, FD_TDS, classify_fd_txn, fd_transactions, summarize_fd
+from fd_report import build_fd_report
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_for_bank_analysis'  # Change in production
@@ -33,7 +37,11 @@ def save_config(new_config):
 
 def get_category_logic(narration, config):
     n = narration.upper()
-    
+
+    # 0. FD transactions (bank-generated narrations, checked first so keywords like "AIR" can't misfire)
+    fd_type = classify_fd_txn(n)
+    if fd_type: return fd_type
+
     # 1. Configured Directors
     for d in config.get("directors", []):
         if d.upper() in n: return "Director Remuneration"
@@ -68,10 +76,6 @@ def get_category_logic(narration, config):
     if any(x in n for x in ["POS TXN MARKUP", "POS DECCHG", "DC INTL POS TXN", "BANK CHARGES", "IMPS CHARGES", "ATM "]):
         return "Bank Charges"
 
-    # 8. FD / Financial
-    if any(x in n for x in ["FD THROUGH MOBILE", "FD BOOKED", "TAX RECOVERY", "FD INTEREST"]):
-        return "Financial / FD"
-        
     # 9. Vendor / Office / Others
     if any(x in n for x in ["RELIANCE RETAIL", "AMAZON", "APPLE.COM", "DEALZY", "CHOCOLADE", "ZALANDO", 
                             "GOTBAG", "OFFICE", "EXPENSE", "PETROLEUM"]):
@@ -96,9 +100,11 @@ def get_party_logic(narration, config):
             return mappings[key]
     
     # 2. FD / Financials
-    if "FD THROUGH MOBILE" in nar or "FD BOOKED" in nar: return "FD Booking (HDFC)"
-    if "TAX RECOVERY" in nar: return "Tax Recovery"
-    if "FD INTEREST" in nar: return "FD Interest"
+    fd_type = classify_fd_txn(nar)
+    if fd_type == FD_BOOKING: return "FD Booking (HDFC)"
+    if fd_type == FD_TDS: return "TDS on FD Interest"
+    if fd_type == FD_INTEREST: return "FD Interest"
+    if fd_type == FD_PRINCIPAL_RETURN: return "FD Principal Return"
         
     # 3. Bank Charges
     if "POS TXN MARKUP" in nar or "POS DECCHG" in nar or "DC INTL POS TXN" in nar:
@@ -289,13 +295,13 @@ def admin():
         
     return render_template('admin.html', config=config)
 
-def calculate_tax_analysis():
-    """Calculate tax-related metrics from bank statement data"""
+def load_statement():
+    """Parse the statement CSV into a categorised DataFrame. Returns (df, period_label) or None."""
     if not CSV_PATH.exists():
         return None
-    
+
     config = load_config()
-    
+
     # Load and parse data
     rows = []
     with CSV_PATH.open("r", encoding="utf-8", errors="replace") as f:
@@ -326,14 +332,26 @@ def calculate_tax_analysis():
         period_label = f"FY {fy_start_year}-{str(fy_end_year)[2:]}"
     else:
         period_label = "Unknown Period"
-    
+
+    return df, period_label
+
+def calculate_tax_analysis():
+    """Calculate tax-related metrics from bank statement data"""
+    statement = load_statement()
+    if statement is None:
+        return None
+    df, period_label = statement
+
+    fd_summary = summarize_fd(df)
+
     # INCOME ANALYSIS (Deposits/Credits)
-    income_df = df[df["Deposit Amt."] > 0].copy()
+    # FD principal coming back (sweep-in / redemption) is the account's own money, not income
+    income_df = df[(df["Deposit Amt."] > 0) & (df["Category"] != FD_PRINCIPAL_RETURN)].copy()
     total_income = income_df["Deposit Amt."].sum()
     
     # Categorize income
     salary_income = income_df[income_df["Category"].isin(["Employee Salary", "Director Remuneration"])]["Deposit Amt."].sum()
-    fd_interest = income_df[income_df["Category"] == "Financial / FD"]["Deposit Amt."].sum()
+    fd_interest = fd_summary["totals"]["gross_interest"]
     other_income = total_income - salary_income - fd_interest
     
     # EXPENSE ANALYSIS (Withdrawals/Debits)
@@ -349,7 +367,10 @@ def calculate_tax_analysis():
     # Non-deductible
     personal_expenses = expense_df[expense_df["Category"].isin(["Donation", "Other / Uncategorized"])]["Withdrawal Amt."].sum()
     bank_charges = expense_df[expense_df["Category"] == "Bank Charges"]["Withdrawal Amt."].sum()
-    tax_payments = expense_df[expense_df["Category"] == "Tax Payment (CBDT)"]["Withdrawal Amt."].sum()
+    cbdt_payments = expense_df[expense_df["Category"] == "Tax Payment (CBDT)"]["Withdrawal Amt."].sum()
+    tds_on_fd = fd_summary["totals"]["tds"]
+    # TDS deducted by the bank on FD interest is claimable as tax already paid
+    tax_payments = cbdt_payments + tds_on_fd
     
     # Calculate totals
     total_deductible = business_travel + professional_fees + office_expenses + recurring_services
@@ -413,8 +434,11 @@ def calculate_tax_analysis():
             "taxable_after_deduction": float(taxable_after_deduction),
             "estimated_tax": float(estimated_tax_with_cess),
             "tax_paid": float(tax_payments),
+            "cbdt_paid": float(cbdt_payments),
+            "tds_on_fd": float(tds_on_fd),
             "refund_liability": float(tax_refund_liability)
         },
+        "fd_summary": fd_summary,
         "category_wise_expenses": expense_df.groupby("Category")["Withdrawal Amt."].sum().reset_index().sort_values("Withdrawal Amt.", ascending=False).rename(columns={"Withdrawal Amt.": "Amount"}).to_dict(orient="records")
     }
 
@@ -427,6 +451,22 @@ def analyze():
     return render_template('analyze.html', 
                          tax_data=json.dumps(tax_data, indent=2),
                          logged_in=session.get('logged_in'))
+
+@app.route('/analyze/fd-report.xlsx')
+def fd_report():
+    statement = load_statement()
+    if statement is None:
+        return "Error: CSV file missing.", 404
+    df, period_label = statement
+
+    report = build_fd_report(summarize_fd(df), fd_transactions(df), period=period_label)
+    filename = f"FD_Interest_Report_{period_label.replace(' ', '_')}.xlsx"
+    return send_file(
+        io.BytesIO(report),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
