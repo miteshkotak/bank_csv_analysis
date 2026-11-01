@@ -72,7 +72,50 @@
         </nav>
     </header>
 
+    {% macro rule_list(list_name, items, accent) %}
+    <div class="space-y-2 mb-4 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+        {% for r in items %}
+        <form action="/admin" method="POST" class="flex flex-col md:flex-row gap-2 bg-slate-800/30 p-2 rounded-lg">
+            <input type="hidden" name="list" value="{{ list_name }}">
+            <input type="hidden" name="anchor" value="#tax-rules">
+            <input type="hidden" name="original_keyword" value="{{ r.keyword }}">
+            <input type="text" name="keyword" value="{{ r.keyword }}" required
+                class="md:w-48 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-{{ accent }}-500">
+            <input type="text" name="reason" value="{{ r.reason }}" required
+                class="flex-1 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-{{ accent }}-500">
+            <div class="flex gap-2">
+                <button type="submit" name="action" value="update_rule"
+                    class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Save</button>
+                <button type="submit" name="action" value="remove_rule" formnovalidate
+                    class="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs">Delete</button>
+            </div>
+        </form>
+        {% else %}
+        <p class="text-xs text-slate-500">No rules. Nothing is excluded.</p>
+        {% endfor %}
+    </div>
+    <form action="/admin" method="POST" class="flex flex-col md:flex-row gap-2">
+        <input type="hidden" name="action" value="add_rule">
+        <input type="hidden" name="list" value="{{ list_name }}">
+        <input type="hidden" name="anchor" value="#tax-rules">
+        <input type="text" name="keyword" placeholder="Keyword in narration" required
+            class="md:w-48 bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-{{ accent }}-500">
+        <input type="text" name="reason" placeholder="Reason (shown on Tax Analysis)" required
+            class="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-{{ accent }}-500">
+        <button type="submit"
+            class="bg-{{ accent }}-600 hover:bg-{{ accent }}-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add</button>
+    </form>
+    {% endmacro %}
+
     <main class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="lg:col-span-2 px-4 py-3 rounded-lg text-sm {{ 'bg-red-500/10 text-red-300 border border-red-500/30' if category == 'error' else 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endwith %}
 
         <!-- File Upload -->
         <section class="glass rounded-2xl p-6 lg:col-span-2">
@@ -101,8 +144,159 @@
                     Upload New CSV
                 </button>
             </form>
-            <p class="text-xs text-slate-500 mt-2">Uploading will overwrite the dashboard data. Only CSV files
-                supported.</p>
+            <p class="text-xs text-slate-500 mt-2">The financial year is detected from the statement dates. Uploading
+                replaces only that year's statement; other years are kept. Only CSV files supported.</p>
+            <div class="flex flex-wrap gap-2 mt-4">
+                {% for fy in fys %}
+                <a href="/analyze?fy={{ fy }}"
+                    class="px-3 py-1 rounded-full bg-slate-800 hover:bg-slate-700 text-xs text-slate-300">FY {{ fy }}</a>
+                {% else %}
+                <span class="text-xs text-slate-500">No statements uploaded yet.</span>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Tax Rules -->
+        <section class="glass rounded-2xl p-6 lg:col-span-2" id="tax-rules">
+            <h2 class="text-xl font-semibold mb-1 text-orange-400">Tax Rules</h2>
+            <p class="text-sm text-slate-400 mb-6">Assumptions used by the Tax Analysis page. Changes apply to every
+                year immediately.</p>
+
+            <h3 class="text-sm font-semibold text-slate-200 mb-2">Tax regime</h3>
+            <form action="/admin" method="POST" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8 items-end">
+                <input type="hidden" name="action" value="update_regime">
+                <input type="hidden" name="anchor" value="#tax-rules">
+                <label class="col-span-2 md:col-span-1 text-xs text-slate-400">Name
+                    <input type="text" name="name" value="{{ rules.regime.name }}"
+                        class="mt-1 w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="text-xs text-slate-400">Base rate %
+                    <input type="number" step="0.01" min="0" max="100" name="base_rate" value="{{ rules.regime.base_rate }}" required
+                        class="mt-1 w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="text-xs text-slate-400">Surcharge %
+                    <input type="number" step="0.01" min="0" max="100" name="surcharge" value="{{ rules.regime.surcharge }}" required
+                        class="mt-1 w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100">
+                </label>
+                <label class="text-xs text-slate-400">Cess %
+                    <input type="number" step="0.01" min="0" max="100" name="cess" value="{{ rules.regime.cess }}" required
+                        class="mt-1 w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100">
+                </label>
+                <button type="submit"
+                    class="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Save regime</button>
+            </form>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-200 mb-1">Credits that are NOT income</h3>
+                    <p class="text-xs text-slate-500 mb-3">Every other credit counts as business income. FD principal
+                        returns are always excluded and FD interest is counted separately.</p>
+                    {{ rule_list('non_income', rules.non_income, 'emerald') }}
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-200 mb-1">Debits that are NOT deductible</h3>
+                    <p class="text-xs text-slate-500 mb-3">Every other debit counts as a business expense. Tax payments,
+                        FD bookings and TDS are always excluded.</p>
+                    {{ rule_list('non_deductible', rules.non_deductible, 'red') }}
+                </div>
+            </div>
+        </section>
+
+        <!-- Tax payments (challans) -->
+        <section class="glass rounded-2xl p-6 lg:col-span-2" id="challans">
+            <h2 class="text-xl font-semibold mb-1 text-indigo-400">Tax Payments (CBDT challans)</h2>
+            <p class="text-sm text-slate-400 mb-4">Which assessment year each payment belongs to. "Auto" assumes
+                payments made 1–15 Jun/Sep/Dec or in March are advance tax for that year, and anything else is the
+                previous year's self-assessment tax.</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-400">
+                    <thead class="bg-slate-800/50 text-slate-200 uppercase text-xs">
+                        <tr>
+                            <th class="px-3 py-2">Date</th>
+                            <th class="px-3 py-2">Reference</th>
+                            <th class="px-3 py-2 text-right">Amount</th>
+                            <th class="px-3 py-2">Assignment</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-700/50">
+                        {% for c in challans %}
+                        <tr>
+                            <td class="px-3 py-2 whitespace-nowrap">{{ c.date }}</td>
+                            <td class="px-3 py-2 font-mono text-xs">{{ c.ref }}</td>
+                            <td class="px-3 py-2 text-right font-mono">₹{{ '{:,.0f}'.format(c.amount) }}</td>
+                            <td class="px-3 py-2">
+                                <form action="/admin" method="POST" class="flex flex-wrap items-center gap-2">
+                                    <input type="hidden" name="action" value="set_challan">
+                                    <input type="hidden" name="anchor" value="#challans">
+                                    <input type="hidden" name="ref" value="{{ c.ref }}">
+                                    <select name="kind"
+                                        class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200">
+                                        <option value="auto" {{ 'selected' if c.auto }}>Auto</option>
+                                        <option value="advance" {{ 'selected' if not c.auto and c.kind == 'advance' }}>Advance tax</option>
+                                        <option value="self_assessment" {{ 'selected' if not c.auto and c.kind == 'self_assessment' }}>Self-assessment</option>
+                                    </select>
+                                    <label class="text-xs">AY
+                                        <input type="text" name="ay" value="{{ c.ay }}" placeholder="2025-26" pattern="\d{4}-\d{2}"
+                                            class="w-20 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200">
+                                    </label>
+                                    <button type="submit"
+                                        class="px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs">Save</button>
+                                    <span class="text-xs text-slate-500">now: {{ 'Advance' if c.kind == 'advance' else 'Self-assessment' }} · AY {{ c.ay }}{{ ' (auto)' if c.auto }}</span>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="px-3 py-4 text-center text-slate-500">No CBDT payments found in uploaded statements.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Actual tax figures (for reconciliation) -->
+        <section class="glass rounded-2xl p-6 lg:col-span-2" id="actuals">
+            <h2 class="text-xl font-semibold mb-1 text-sky-400">Actual Tax Figures</h2>
+            <p class="text-sm text-slate-400 mb-4">From the filed ITR and challans. The Tax Analysis page compares its
+                estimate against these. Leave fields blank if unknown.</p>
+            {% set fields = [
+                ('advance_tax', 'Advance tax paid'), ('self_assessment_tax', 'Self-assessment tax paid'),
+                ('total_income', 'Total income (ITR)'), ('net_tax', 'Net tax payable (ITR)'),
+                ('interest', 'Interest & fee (ITR)'), ('taxes_paid', 'Taxes paid (ITR)')] %}
+            <div class="space-y-4">
+                {% for fy in actual_years + ['new'] %}
+                {% set a = rules.actuals.get(fy, {}) %}
+                <form action="/admin" method="POST" class="bg-slate-800/30 rounded-lg p-4">
+                    <input type="hidden" name="action" value="set_actuals">
+                    <input type="hidden" name="anchor" value="#actuals">
+                    <div class="flex items-center gap-3 mb-3">
+                        {% if fy == 'new' %}
+                        <label class="text-sm text-slate-300">Add another year: FY
+                            <input type="text" name="fy" placeholder="2023-24" pattern="\d{4}-\d{2}" required
+                                class="w-24 bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-1 text-sm">
+                        </label>
+                        {% else %}
+                        <input type="hidden" name="fy" value="{{ fy }}">
+                        <span class="text-sm font-semibold text-slate-200">FY {{ fy }}</span>
+                        <span class="text-xs text-slate-500">(AY {{ fy[:2] }}{{ '%02d' % ((fy[2:4]|int) + 1) }}-{{ '%02d' % ((fy[5:7]|int) + 1) }})</span>
+                        {% endif %}
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+                        {% for key, label in fields %}
+                        <label class="text-xs text-slate-400">{{ label }}
+                            <input type="text" inputmode="decimal" name="{{ key }}" value="{{ '%.0f' % a[key] if key in a else '' }}"
+                                class="mt-1 w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100 font-mono">
+                        </label>
+                        {% endfor %}
+                        <label class="text-xs text-slate-400">Self-assessment paid on
+                            <input type="date" name="self_assessment_paid_on" value="{{ a.get('self_assessment_paid_on', '') }}"
+                                class="mt-1 w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-100">
+                        </label>
+                        <button type="submit"
+                            class="bg-sky-600 hover:bg-sky-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors">Save</button>
+                    </div>
+                </form>
+                {% endfor %}
+            </div>
         </section>
 
         <!-- Directors Management -->

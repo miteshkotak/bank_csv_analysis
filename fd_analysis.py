@@ -60,7 +60,7 @@ def _deposit_summary(fd_number: str, rows: pd.DataFrame) -> dict:
         "tds": tds,
         "net_interest": interest - tds,
         "principal_returned": _sum(rows, FD_PRINCIPAL_RETURN),
-        "credits": int(len(interest_rows)),
+        "credits": len(interest_rows),
         "last_interest_on": last_credit.strftime("%Y-%m-%d") if pd.notna(last_credit) else None,
     }
 

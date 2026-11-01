@@ -1,16 +1,33 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash, send_file
 import io
 import json
 import os
 import pathlib
-import pandas as pd
 import re
-import csv
-import sys
-from datetime import datetime
 
-from fd_analysis import FD_BOOKING, FD_INTEREST, FD_PRINCIPAL_RETURN, FD_TDS, classify_fd_txn, fd_transactions, summarize_fd
+from flask import (
+    Flask,
+    flash,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+    url_for,
+)
+
+import statements
+from corporate_tax import compute_corporate_tax, list_challans
+from fd_analysis import (
+    FD_BOOKING,
+    FD_INTEREST,
+    FD_PRINCIPAL_RETURN,
+    FD_TDS,
+    classify_fd_txn,
+    fd_transactions,
+    summarize_fd,
+)
 from fd_report import build_fd_report
+from tax_rules import TaxRuleError, apply_rule_action, get_tax_rules
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_for_bank_analysis'  # Change in production
@@ -116,77 +133,53 @@ def get_party_logic(narration, config):
     # 4. Cleanup default
     clean = narration
     for prefix in ["NEFT DR-", "RTGS DR-", "IMPS-", "POS ", ".DC INTL ", "UPI-", "ME DC SI ", "CRV POS", "ME DC "]:
-         clean = re.sub(r"^" + re.escape(prefix) + r"[A-Z0-9]*[\- ]*", "", clean, flags=re.I)
+         clean = re.sub(r"^" + re.escape(prefix) + r"[A-Z0-9]*[\- ]*", "", clean, flags=re.IGNORECASE)
     clean = re.sub(r"^\d+[\- ]*", "", clean)
     clean = re.sub(r"^\d+X+\d+\s+", "", clean)
     return clean.strip()[:30]
 
-def analyze_data():
-    if not CSV_PATH.exists():
+def load_statement(fy):
+    """Load a financial year's statement as a categorised DataFrame, or None if not uploaded."""
+    df = statements.load_raw(fy)
+    if df is None:
         return None
-    
     config = load_config()
-    
-    rows = []
-    with CSV_PATH.open("r", encoding="utf-8", errors="replace") as f:
-        reader = csv.reader(f)
-        for row in reader:
-             if row and len(row) >= 1 and re.match(r"\d{2}/\d{2}/\d{2}", row[0]):
-                 if len(row) >= 7:
-                     rows.append(row[:7])
-    
-    cols = ["Date", "Narration", "Chq/Ref.No.", "Value Dt", "Withdrawal Amt.", "Deposit Amt.", "Closing Balance"]
-    df = pd.DataFrame(rows, columns=cols)
-    
-    for col in ["Withdrawal Amt.", "Deposit Amt.", "Closing Balance"]:
-        df[col] = pd.to_numeric(df[col].replace("", "0"), errors="coerce").fillna(0)
-    
-    df = df[df["Withdrawal Amt."] > 0].copy()
-    
-    # Calculate Date Range / Financial Year
-    try:
-        # Convert Date column to datetime objects
-        df["DateObj"] = pd.to_datetime(df["Date"], format="%d/%m/%y", errors="coerce")
-        valid_dates = df["DateObj"].dropna()
-        
-        if not valid_dates.empty:
-            min_date = valid_dates.min()
-            max_date = valid_dates.max()
-            
-            # Logic for Financial Year (assuming Apr-Mar)
-            # If start is Apr 2025, it's FY 2025-26
-            fy_start_year = min_date.year if min_date.month >= 4 else min_date.year - 1
-            fy_end_year = fy_start_year + 1
-            
-            # Check if all dates fall roughly within this FY
-            # But user just wants "Financial analysis of year e.g. 2025-26"
-            # We can label it based on the primary year range
-            period_label = f"FY {fy_start_year}-{str(fy_end_year)[2:]}"
-            
-            # If dates span significantly more, maybe just show date range
-            # But let's stick to the requested format "2025-26"
-        else:
-            period_label = "Unknown Period"
-    except Exception as e:
-        print(f"Date parsing error: {e}")
-        period_label = "Unknown Period"
+    return df.assign(
+        Category=df["Narration"].apply(lambda n: get_category_logic(n, config)),
+        Party=df["Narration"].apply(lambda n: get_party_logic(n, config)),
+    )
 
-    df["Category"] = df["Narration"].apply(lambda n: get_category_logic(n, config))
-    df["Party"] = df["Narration"].apply(lambda n: get_party_logic(n, config))
-    
+def selected_fy():
+    """FY from ?fy=, falling back to the latest uploaded statement."""
+    fys = statements.available_fys()
+    requested = request.args.get("fy")
+    if requested in fys:
+        return requested
+    return fys[0] if fys else None
+
+def analyze_data(fy):
+    df = load_statement(fy)
+    if df is None:
+        return None
+    df = df[df["Withdrawal Amt."] > 0]
+
     total_withdrawn = df["Withdrawal Amt."].sum()
     
     cat_summary = df.groupby("Category")["Withdrawal Amt."].sum().reset_index().sort_values("Withdrawal Amt.", ascending=False)
     party_summary = df.groupby("Party")["Withdrawal Amt."].sum().reset_index().sort_values("Withdrawal Amt.", ascending=False)
     
     return {
-        "period": period_label,
+        "period": statements.fy_label(fy),
+        "fy": fy,
+        "fys": statements.available_fys(),
         "totals": {
             "withdrawn": str(total_withdrawn)
         },
         "category_breakdown": cat_summary.rename(columns={"Withdrawal Amt.": "Total"}).to_dict(orient="records"),
         "party_breakdown": party_summary.rename(columns={"Withdrawal Amt.": "Total"}).to_dict(orient="records")
     }
+
+NO_STATEMENT_MSG = "No bank statement uploaded yet. Log in and upload one from the Admin page."
 
 # ----------------------------------------------------------------------
 # Routes
@@ -195,9 +188,9 @@ def analyze_data():
 @app.route('/')
 def index():
     # Dashboard is now public
-    data = analyze_data()
+    data = analyze_data(selected_fy())
     if data is None:
-        return "Error: CSV file missing."
+        return NO_STATEMENT_MSG
         
     return render_template('dashboard.html', 
                          data_json=json.dumps(data, indent=2),
@@ -224,11 +217,46 @@ def dashboard():
     if not session.get('logged_in'):
         return redirect(url_for('login'))
     
-    data = analyze_data()
+    data = analyze_data(selected_fy())
     if data is None:
-        return "Error: CSV file missing."
+        return NO_STATEMENT_MSG
         
     return render_template('dashboard.html', data_json=json.dumps(data, indent=2))
+
+def handle_upload():
+    file = request.files.get('statement_file')
+    if file is None or file.filename == '':
+        flash('No file selected', 'error')
+        return redirect(url_for('admin'))
+    if not file.filename.lower().endswith('.csv'):
+        flash('Invalid file type. Please upload a CSV.', 'error')
+        return redirect(url_for('admin'))
+    try:
+        fy = statements.save_statement(file.read())
+    except statements.StatementError as e:
+        flash(str(e), 'error')
+        return redirect(url_for('admin'))
+    flash(f'Statement for {statements.fy_label(fy)} uploaded. Tax analysis recalculated.', 'success')
+    return redirect(url_for('analyze', fy=fy))
+
+TAX_RULE_ACTIONS = {"add_rule", "update_rule", "remove_rule", "update_regime", "set_challan", "set_actuals"}
+
+def handle_tax_rule_action(config, action):
+    try:
+        rules = apply_rule_action(get_tax_rules(config), action, request.form.to_dict())
+    except TaxRuleError as e:
+        flash(str(e), 'error')
+        return
+    save_config({**config, "tax_rules": rules})
+    flash('Tax rules updated.', 'success')
+
+def admin_challans(rules):
+    """CBDT challans from every uploaded statement, with the year each is counted towards."""
+    challans = []
+    for fy in statements.available_fys():
+        df = statements.load_raw(fy)
+        challans += [{**c, "statement_fy": fy} for c in list_challans(df, fy, rules)]
+    return sorted(challans, key=lambda c: c["date"], reverse=True)
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin():
@@ -241,21 +269,12 @@ def admin():
         action = request.form.get('action')
         
         if action == 'upload_file':
-            if 'statement_file' not in request.files:
-                flash('No file part', 'error')
-                return redirect(url_for('admin'))
-            file = request.files['statement_file']
-            if file.filename == '':
-                flash('No selected file', 'error')
-                return redirect(url_for('admin'))
-            if file and file.filename.endswith('.csv'):
-                # Overwrite existing file
-                file.save(CSV_PATH)
-                flash('New statement uploaded successfully!', 'success')
-                return redirect(url_for('index'))
-            else:
-                flash('Invalid file type. Please upload a CSV.', 'error')
-                return redirect(url_for('admin'))
+            return handle_upload()
+
+        if action in TAX_RULE_ACTIONS:
+            handle_tax_rule_action(config, action)
+            anchor = request.form.get('anchor', '')
+            return redirect(url_for('admin') + (anchor if re.fullmatch(r"#[\w-]+", anchor) else ''))
 
         elif action == 'add_director':
             val = request.form.get('director_name')
@@ -292,161 +311,31 @@ def admin():
                 
         save_config(config)
         return redirect(url_for('admin'))
-        
-    return render_template('admin.html', config=config)
 
-def load_statement():
-    """Parse the statement CSV into a categorised DataFrame. Returns (df, period_label) or None."""
-    if not CSV_PATH.exists():
+    rules = get_tax_rules(config)
+    fys = statements.available_fys()
+    actual_years = sorted(set(fys) | set(rules["actuals"]), reverse=True)
+    return render_template('admin.html', config=config, rules=rules, fys=fys,
+                           challans=admin_challans(rules), actual_years=actual_years)
+
+def calculate_tax_analysis(fy):
+    """Corporate tax estimate for a financial year, using the editable rules from Admin."""
+    df = load_statement(fy)
+    if df is None:
         return None
-
-    config = load_config()
-
-    # Load and parse data
-    rows = []
-    with CSV_PATH.open("r", encoding="utf-8", errors="replace") as f:
-        reader = csv.reader(f)
-        for row in reader:
-            if row and len(row) >= 1 and re.match(r"\d{2}/\d{2}/\d{2}", row[0]):
-                if len(row) >= 7:
-                    rows.append(row[:7])
-    
-    cols = ["Date", "Narration", "Chq/Ref.No.", "Value Dt", "Withdrawal Amt.", "Deposit Amt.", "Closing Balance"]
-    df = pd.DataFrame(rows, columns=cols)
-    
-    for col in ["Withdrawal Amt.", "Deposit Amt.", "Closing Balance"]:
-        df[col] = pd.to_numeric(df[col].replace("", "0"), errors="coerce").fillna(0)
-    
-    # Add categories
-    df["Category"] = df["Narration"].apply(lambda n: get_category_logic(n, config))
-    df["Party"] = df["Narration"].apply(lambda n: get_party_logic(n, config))
-    
-    # Parse dates for financial year calculation
-    df["DateObj"] = pd.to_datetime(df["Date"], format="%d/%m/%y", errors="coerce")
-    valid_dates = df["DateObj"].dropna()
-    
-    if not valid_dates.empty:
-        min_date = valid_dates.min()
-        fy_start_year = min_date.year if min_date.month >= 4 else min_date.year - 1
-        fy_end_year = fy_start_year + 1
-        period_label = f"FY {fy_start_year}-{str(fy_end_year)[2:]}"
-    else:
-        period_label = "Unknown Period"
-
-    return df, period_label
-
-def calculate_tax_analysis():
-    """Calculate tax-related metrics from bank statement data"""
-    statement = load_statement()
-    if statement is None:
-        return None
-    df, period_label = statement
-
-    fd_summary = summarize_fd(df)
-
-    # INCOME ANALYSIS (Deposits/Credits)
-    # FD principal coming back (sweep-in / redemption) is the account's own money, not income
-    income_df = df[(df["Deposit Amt."] > 0) & (df["Category"] != FD_PRINCIPAL_RETURN)].copy()
-    total_income = income_df["Deposit Amt."].sum()
-    
-    # Categorize income
-    salary_income = income_df[income_df["Category"].isin(["Employee Salary", "Director Remuneration"])]["Deposit Amt."].sum()
-    fd_interest = fd_summary["totals"]["gross_interest"]
-    other_income = total_income - salary_income - fd_interest
-    
-    # EXPENSE ANALYSIS (Withdrawals/Debits)
-    expense_df = df[df["Withdrawal Amt."] > 0].copy()
-    total_expenses = expense_df["Withdrawal Amt."].sum()
-    
-    # Tax-deductible business expenses
-    business_travel = expense_df[expense_df["Category"] == "Business Travel Expense"]["Withdrawal Amt."].sum()
-    professional_fees = expense_df[expense_df["Category"] == "Professional Fees"]["Withdrawal Amt."].sum()
-    office_expenses = expense_df[expense_df["Category"] == "Office Expense"]["Withdrawal Amt."].sum()
-    recurring_services = expense_df[expense_df["Category"] == "Recurring Services"]["Withdrawal Amt."].sum()
-    
-    # Non-deductible
-    personal_expenses = expense_df[expense_df["Category"].isin(["Donation", "Other / Uncategorized"])]["Withdrawal Amt."].sum()
-    bank_charges = expense_df[expense_df["Category"] == "Bank Charges"]["Withdrawal Amt."].sum()
-    cbdt_payments = expense_df[expense_df["Category"] == "Tax Payment (CBDT)"]["Withdrawal Amt."].sum()
-    tds_on_fd = fd_summary["totals"]["tds"]
-    # TDS deducted by the bank on FD interest is claimable as tax already paid
-    tax_payments = cbdt_payments + tds_on_fd
-    
-    # Calculate totals
-    total_deductible = business_travel + professional_fees + office_expenses + recurring_services
-    total_non_deductible = personal_expenses + bank_charges
-    
-    # Tax Calculation (Simple estimation - India tax slabs for individuals)
-    # This is a simplified calculation
-    taxable_income = total_income - total_deductible
-    
-    # Standard deduction (simplified)
-    standard_deduction = 50000
-    taxable_after_deduction = max(0, taxable_income - standard_deduction)
-    
-    # Tax slabs (New regime - simplified for FY 2025-26)
-    # 0-3L: 0%, 3-7L: 5%, 7-10L: 10%, 10-12L: 15%, 12-15L: 20%, >15L: 30%
-    estimated_tax = 0
-    if taxable_after_deduction > 300000:
-        if taxable_after_deduction <= 700000:
-            estimated_tax = (taxable_after_deduction - 300000) * 0.05
-        elif taxable_after_deduction <= 1000000:
-            estimated_tax = 400000 * 0.05 + (taxable_after_deduction - 700000) * 0.10
-        elif taxable_after_deduction <= 1200000:
-            estimated_tax = 400000 * 0.05 + 300000 * 0.10 + (taxable_after_deduction - 1000000) * 0.15
-        elif taxable_after_deduction <= 1500000:
-            estimated_tax = 400000 * 0.05 + 300000 * 0.10 + 200000 * 0.15 + (taxable_after_deduction - 1200000) * 0.20
-        else:
-            estimated_tax = 400000 * 0.05 + 300000 * 0.10 + 200000 * 0.15 + 300000 * 0.20 + (taxable_after_deduction - 1500000) * 0.30
-    
-    # Add cess (4%)
-    estimated_tax_with_cess = estimated_tax * 1.04
-    
-    # Calculate refund/liability
-    tax_refund_liability = tax_payments - estimated_tax_with_cess
-    
+    rules = get_tax_rules(load_config())
     return {
-        "period": period_label,
-        "income": {
-            "total": float(total_income),
-            "salary": float(salary_income),
-            "fd_interest": float(fd_interest),
-            "other": float(other_income)
-        },
-        "expenses": {
-            "total": float(total_expenses),
-            "deductible": {
-                "total": float(total_deductible),
-                "business_travel": float(business_travel),
-                "professional_fees": float(professional_fees),
-                "office_expenses": float(office_expenses),
-                "recurring_services": float(recurring_services)
-            },
-            "non_deductible": {
-                "total": float(total_non_deductible),
-                "personal": float(personal_expenses),
-                "bank_charges": float(bank_charges)
-            }
-        },
-        "tax": {
-            "taxable_income": float(taxable_income),
-            "standard_deduction": float(standard_deduction),
-            "taxable_after_deduction": float(taxable_after_deduction),
-            "estimated_tax": float(estimated_tax_with_cess),
-            "tax_paid": float(tax_payments),
-            "cbdt_paid": float(cbdt_payments),
-            "tds_on_fd": float(tds_on_fd),
-            "refund_liability": float(tax_refund_liability)
-        },
-        "fd_summary": fd_summary,
-        "category_wise_expenses": expense_df.groupby("Category")["Withdrawal Amt."].sum().reset_index().sort_values("Withdrawal Amt.", ascending=False).rename(columns={"Withdrawal Amt.": "Amount"}).to_dict(orient="records")
+        **compute_corporate_tax(df, rules, fy),
+        "period": statements.fy_label(fy),
+        "fys": statements.available_fys(),
+        "fd_summary": summarize_fd(df),
     }
 
 @app.route('/analyze')
 def analyze():
-    tax_data = calculate_tax_analysis()
+    tax_data = calculate_tax_analysis(selected_fy())
     if tax_data is None:
-        return "Error: CSV file missing."
+        return NO_STATEMENT_MSG
     
     return render_template('analyze.html', 
                          tax_data=json.dumps(tax_data, indent=2),
@@ -454,10 +343,11 @@ def analyze():
 
 @app.route('/analyze/fd-report.xlsx')
 def fd_report():
-    statement = load_statement()
-    if statement is None:
-        return "Error: CSV file missing.", 404
-    df, period_label = statement
+    fy = selected_fy()
+    df = load_statement(fy) if fy else None
+    if df is None:
+        return NO_STATEMENT_MSG, 404
+    period_label = statements.fy_label(fy)
 
     report = build_fd_report(summarize_fd(df), fd_transactions(df), period=period_label)
     filename = f"FD_Interest_Report_{period_label.replace(' ', '_')}.xlsx"
@@ -468,6 +358,9 @@ def fd_report():
         download_name=filename,
     )
 
+# Move the old single statement file into per-year storage on first run
+statements.migrate_legacy(CSV_PATH)
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8000))
+    port = int(os.environ.get('PORT', '8000'))
     app.run(host='0.0.0.0', port=port, debug=True)
